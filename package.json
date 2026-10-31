@@ -1,0 +1,20 @@
+{
+  "name": "shop-cart",
+  "version": "1.0.0",
+  "description": "Shopping cart + session management with Cassandra and MongoDB",
+  "main": "src/server.js",
+  "scripts": {
+    "init:db": "node scripts/init-cassandra.js",
+    "seed": "node scripts/seed.js",
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cassandra-driver": "^4.7.2",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.4.0"
+  }
+}

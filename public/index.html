@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shop Cart</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2430; --muted:#6b7686; --accent:#2563eb; --border:#e3e7ee; --danger:#dc2626; --ok:#16a34a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12161c; --card:#1b212a; --text:#e8ecf2; --muted:#93a0b2; --accent:#5b8cff; --border:#2a323d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; justify-content:space-between; align-items:center; padding:14px 24px; background:var(--card); border-bottom:1px solid var(--border); }
+  header h1 { font-size:20px; margin:0; }
+  main { display:grid; grid-template-columns: 1fr 360px; gap:24px; padding:24px; max-width:1100px; margin:0 auto; }
+  @media (max-width:800px){ main{ grid-template-columns:1fr; } }
+  h2 { font-size:16px; margin:0 0 12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 4px; font-size:15px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .price { font-weight:600; margin:8px 0; }
+  button { cursor:pointer; border:0; border-radius:8px; padding:8px 12px; font-size:14px; background:var(--accent); color:#fff; }
+  button.secondary { background:transparent; color:var(--text); border:1px solid var(--border); }
+  button.danger { background:transparent; color:var(--danger); padding:4px 8px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  input { width:100%; padding:8px; margin:4px 0 8px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:14px; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:0; }
+  .qty { display:flex; align-items:center; gap:6px; }
+  .qty button { padding:2px 8px; }
+  .total { display:flex; justify-content:space-between; font-weight:600; margin:12px 0; }
+  #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); padding:10px 18px; border-radius:8px; color:#fff; display:none; }
+  .side { display:flex; flex-direction:column; gap:16px; }
+  .tabs { display:flex; gap:8px; margin-bottom:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛒 Shop Cart</h1>
+  <div id="userbar" class="muted"></div>
+</header>
+
+<main>
+  <section>
+    <h2>Products</h2>
+    <div id="products" class="grid"></div>
+  </section>
+
+  <aside class="side">
+    <div class="card" id="authCard"></div>
+    <div class="card">
+      <h2>Your cart</h2>
+      <div id="cart"></div>
+    </div>
+    <div class="card" id="ordersCard" style="display:none">
+      <h2>Your orders</h2>
+      <div id="orders"></div>
+    </div>
+  </aside>
+</main>
+<div id="toast"></div>
+
+<script>
+const money = (c) => '₹' + (c / 100).toFixed(2);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const $ = (id) => document.getElementById(id);
+let me = { authenticated: false };
+let authMode = 'login';
+
+async function api(url, opts = {}) {
+  const res = await fetch(url, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    method: opts.method || 'GET',
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+function toast(msg, ok = true) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.style.background = ok ? 'var(--ok)' : 'var(--danger)';
+  t.style.display = 'block';
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => (t.style.display = 'none'), 2800);
+}
+const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message, false); } };
+
+async function loadProducts() {
+  const products = await api('/api/products');
+  $('products').innerHTML = products.length ? products.map((p) => `
+    <div class="card">
+      <h3>${esc(p.name)}</h3>
+      <div class="muted">${esc(p.description)}</div>
+      <div class="price">${money(p.price_cents)}</div>
+      <div class="muted">${p.stock > 0 ? p.stock + ' in stock' : 'Out of stock'}</div>
+      <button ${p.stock < 1 ? 'disabled' : ''} onclick="addToCart('${esc(p._id)}')">Add to cart</button>
+    </div>`).join('') : '<p class="muted">No products yet. Run <b>npm run seed</b> in the terminal.</p>';
+}
+
+async function loadCart() {
+  const c = await api('/api/cart');
+  if (!c.items.length) { $('cart').innerHTML = '<p class="muted">Your cart is empty.</p>'; return; }
+  $('cart').innerHTML = c.items.map((i) => `
+    <div class="row">
+      <div><div>${esc(i.name)}</div><div class="muted">${money(i.price_cents)} each</div></div>
+      <div class="qty">
+        <button class="secondary" onclick="setQty('${esc(i.productId)}', ${i.quantity - 1})">−</button>
+        <span>${i.quantity}</span>
+        <button class="secondary" onclick="setQty('${esc(i.productId)}', ${i.quantity + 1})">+</button>
+        <button class="danger" onclick="removeItem('${esc(i.productId)}')">✕</button>
+      </div>
+    </div>`).join('') + `
+    <div class="total"><span>Total</span><span>${money(c.total_cents)}</span></div>
+    ${me.authenticated
+      ? '<button style="width:100%" onclick="checkout()">Checkout</button>'
+      : '<div class="muted">Log in or register to check out. Your cart will be kept.</div>'}`;
+}
+
+const addToCart = guard(async (id) => { await api('/api/cart/items', { method: 'POST', body: { productId: id, quantity: 1 } }); toast('Added to cart'); await loadCart(); });
+const setQty = guard(async (id, q) => {
+  if (q < 1) return removeItem(id);
+  await api('/api/cart/items/' + id, { method: 'PATCH', body: { quantity: q } }); await loadCart();
+});
+const removeItem = guard(async (id) => { await api('/api/cart/items/' + id, { method: 'DELETE' }); await loadCart(); });
+
+const checkout = guard(async () => {
+  const city = prompt('Delivery city?', 'Hyderabad');
+  if (city === null) return;
+  const order = await api('/api/orders/checkout', { method: 'POST', body: { address: { city } } });
+  toast('Order placed! Total ' + money(order.total_cents));
+  await Promise.all([loadProducts(), loadCart(), loadOrders()]);
+});
+
+async function loadOrders() {
+  if (!me.authenticated) { $('ordersCard').style.display = 'none'; return; }
+  const orders = await api('/api/orders');
+  $('ordersCard').style.display = '';
+  $('orders').innerHTML = orders.length ? orders.map((o) => `
+    <div class="row"><div><div>${o.items.map((i) => esc(i.name) + ' × ' + i.quantity).join(', ')}</div>
+    <div class="muted">${new Date(o.createdAt).toLocaleString()} · ${esc(o.status)}</div></div>
+    <b>${money(o.total_cents)}</b></div>`).join('') : '<p class="muted">No orders yet.</p>';
+}
+
+async function loadMe() {
+  me = await api('/api/auth/me');
+  renderAuth();
+}
+
+function renderAuth() {
+  if (me.authenticated) {
+    $('userbar').textContent = 'Signed in as ' + (me.user.name || me.user.email);
+    $('authCard').innerHTML = `<h2>Account</h2><div class="muted">${esc(me.user.email)}</div><br><button class="secondary" onclick="logout()">Log out</button>`;
+  } else {
+    $('userbar').textContent = 'Browsing as guest';
+    $('authCard').innerHTML = `
+      <div class="tabs">
+        <button class="${authMode === 'login' ? '' : 'secondary'}" onclick="setMode('login')">Log in</button>
+        <button class="${authMode === 'register' ? '' : 'secondary'}" onclick="setMode('register')">Register</button>
+      </div>
+      ${authMode === 'register' ? '<input id="f_name" placeholder="Name">' : ''}
+      <input id="f_email" type="email" placeholder="Email">
+      <input id="f_pass" type="password" placeholder="Password (min 8 chars)">
+      <button style="width:100%" onclick="submitAuth()">${authMode === 'login' ? 'Log in' : 'Create account'}</button>`;
+  }
+}
+function setMode(m) { authMode = m; renderAuth(); }
+
+const submitAuth = guard(async () => {
+  const body = { email: $('f_email').value, password: $('f_pass').value };
+  if (authMode === 'register') body.name = $('f_name').value;
+  await api('/api/auth/' + authMode, { method: 'POST', body });
+  await refreshAll();
+  toast('Welcome!');
+});
+const logout = guard(async () => { await api('/api/auth/logout', { method: 'POST' }); await refreshAll(); });
+
+async function refreshAll() {
+  await loadMe();
+  await Promise.all([loadProducts(), loadCart(), loadOrders()]);
+}
+refreshAll().catch((e) => toast(e.message, false));
+</script>
+</body>
+</html>

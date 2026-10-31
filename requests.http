@@ -1,0 +1,31 @@
+@base = http://localhost:3000
+
+### Health
+GET {{base}}/health
+
+### List products (copy an _id from the response into the next request)
+GET {{base}}/api/products
+
+### Add to cart as guest
+POST {{base}}/api/cart/items
+Content-Type: application/json
+
+{ "productId": "PASTE_PRODUCT_ID", "quantity": 2 }
+
+### View cart
+GET {{base}}/api/cart
+
+### Register (guest cart merges into your account)
+POST {{base}}/api/auth/register
+Content-Type: application/json
+
+{ "email": "asha@example.com", "password": "password123", "name": "Asha" }
+
+### Checkout
+POST {{base}}/api/orders/checkout
+Content-Type: application/json
+
+{ "address": { "line1": "1 Main St", "city": "Hyderabad", "state": "TS", "pincode": "500001" } }
+
+### My orders
+GET {{base}}/api/orders
